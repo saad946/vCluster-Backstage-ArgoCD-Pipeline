@@ -82,7 +82,8 @@ jobs:
         argocd repo list --grpc-web --insecure | grep loft || echo "Warning: Loft repo not found in list"
 
     - name: Get DNS Ready
-      run: backstage/my-backstage-app/packages/backend/templates/vcluster/content/vcluster_scripts/setdns.sh ${{ github.event.inputs.clusterName }} ${{ secrets.CF_ZONE_ID }} ${{ secrets.CF_API_TOKEN }} ${{ secrets.TARGET_DOMAIN }} ${{ github.event.inputs.hostClusterType }}
+      continue-on-error: true
+      run: backstage/my-backstage-app/packages/backend/templates/vcluster/content/vcluster_scripts/setdns.sh ${{ github.event.inputs.clusterName }} ${{ secrets.CF_ZONE_ID }} ${{ secrets.CF_API_TOKEN }} ${{ secrets.TARGET_DOMAIN }} ${{ github.event.inputs.hostClusterType }} || echo "DNS setup skipped or failed, continuing..."
 
     - name: Deploy vcluster
       run: |
