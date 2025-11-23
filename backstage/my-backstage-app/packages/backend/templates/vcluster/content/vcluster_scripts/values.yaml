@@ -173,12 +173,12 @@ syncer:
   storage:
     # If this is disabled, vcluster will use an emptyDir instead
     # of a PersistentVolumeClaim
-    persistence: false
+    persistence: true
     # Size of the persistent volume claim
-    size: 8Gi
+    size: 5Gi
     # Optional StorageClass used for the pvc
     # if empty default StorageClass defined in your host cluster will be used
-    #className:
+    className: gp2
 
 # Virtual Cluster (k3s) configuration
 vcluster:

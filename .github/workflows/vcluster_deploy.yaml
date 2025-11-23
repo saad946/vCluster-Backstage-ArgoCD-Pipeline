@@ -92,6 +92,8 @@ jobs:
           --path vcluster_scripts/vcluster-helm \
           --helm-set vcluster.syncer.extraArgs[0]="--tls-san=${{ github.event.inputs.clusterName }}.tekanaid.com" \
           --helm-set vcluster.syncer.extraArgs[1]="--out-kube-config-server=https://${{ github.event.inputs.clusterName }}.tekanaid.com" \
+          --helm-set syncer.storage.persistence=true \
+          --helm-set syncer.storage.className=gp2 \
           --dest-server $DEST_SERVER \
           --dest-namespace ${{ github.event.inputs.clusterName }} \
           --project default \
