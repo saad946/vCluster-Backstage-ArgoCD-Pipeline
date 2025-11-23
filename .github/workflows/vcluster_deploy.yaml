@@ -64,18 +64,27 @@ jobs:
         sudo chmod +x /usr/local/bin/argocd
 
     - name: Login to Argo CD
-      run: argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USER }} --password ${{ secrets.ARGOCD_PASS }} --grpc-web
+      run: argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USER }} --password ${{ secrets.ARGOCD_PASS }} --grpc-web --insecure
 
     - name: Register Repository in Argo CD
-      run: argocd repo add ${{ github.event.inputs.repoURLforArgo }} --username samgabrail --password ${{ secrets.MYGITHUB_TOKEN }}
+      run: argocd repo add ${{ github.event.inputs.repoURLforArgo }} --username ${{ github.actor }} --password ${{ secrets.MYGITHUB_TOKEN }}
+
+    - name: Register Helm Repository in Argo CD
+      run: |
+        echo "Registering loft helm repository in ArgoCD..."
+        argocd repo add https://charts.loft.sh \
+          --type helm \
+          --name loft \
+          --grpc-web \
+          --insecure || echo "Repository may already exist"
+        echo "Verifying helm repository..."
+        argocd repo list --grpc-web --insecure | grep loft || echo "Warning: Loft repo not found in list"
 
     - name: Get DNS Ready
       run: backstage/my-backstage-app/packages/backend/templates/vcluster/content/vcluster_scripts/setdns.sh ${{ github.event.inputs.clusterName }} ${{ secrets.CF_ZONE_ID }} ${{ secrets.CF_API_TOKEN }} ${{ secrets.TARGET_DOMAIN }} ${{ github.event.inputs.hostClusterType }}
 
     - name: Deploy vcluster
       run: |
-        helm repo add loft https://charts.loft.sh
-        helm repo update
         if [ "${{ github.event.inputs.hostClusterType }}" = "eks" ]; then
           DEST_SERVER="${{ github.event.inputs.hostEKS_URLforArgo }}"
         elif [ "${{ github.event.inputs.hostClusterType }}" = "gke" ]; then
