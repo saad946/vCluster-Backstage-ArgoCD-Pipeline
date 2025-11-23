@@ -120,13 +120,13 @@ jobs:
         sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
     - name: Auth with Google Cloud
-      if: ${{ github.event.inputs.hostClusterType }} == 'gke'
+      if: github.event.inputs.hostClusterType == 'gke'
       uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
     - name: Set up Cloud SDK
-      if: ${{ github.event.inputs.hostClusterType }} == 'gke'
+      if: github.event.inputs.hostClusterType == 'gke'
       uses: google-github-actions/setup-gcloud@v2
 
     - name: Save Kubeconfig in Akeyless
