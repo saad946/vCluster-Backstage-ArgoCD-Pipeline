@@ -31,8 +31,50 @@ jobs:
         sudo curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
         sudo chmod +x /usr/local/bin/argocd
 
+    - name: Verify ArgoCD Server Connectivity
+      run: |
+        if [ -z "${{ secrets.ARGOCD_SERVER }}" ]; then
+          echo "Error: ARGOCD_SERVER secret is not set in GitHub repository secrets"
+          exit 1
+        fi
+        echo "Checking connectivity to ArgoCD server: ${{ secrets.ARGOCD_SERVER }}"
+        # Extract hostname from URL (remove https:// or http://)
+        SERVER_HOST=$(echo ${{ secrets.ARGOCD_SERVER }} | sed 's|https\?://||' | cut -d: -f1)
+        SERVER_PORT=$(echo ${{ secrets.ARGOCD_SERVER }} | sed 's|https\?://||' | cut -d: -f2)
+        SERVER_PORT=${SERVER_PORT:-443}
+        timeout 10 bash -c "echo > /dev/tcp/$SERVER_HOST/$SERVER_PORT" 2>/dev/null || {
+          echo "Warning: Cannot reach ArgoCD server. Make sure:"
+          echo "1. ArgoCD is exposed to the internet (use ngrok or ingress)"
+          echo "2. ARGOCD_SERVER secret contains the public URL"
+          echo "Continuing with login attempt anyway..."
+        }
+
     - name: Login to Argo CD
-      run: argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USER }} --password ${{ secrets.ARGOCD_PASS }} --grpc-web --insecure
+      run: |
+        echo "Attempting to login to ArgoCD server..."
+        if [ -z "${{ secrets.ARGOCD_SERVER }}" ]; then
+          echo "Error: ARGOCD_SERVER secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.ARGOCD_USER }}" ]; then
+          echo "Error: ARGOCD_USER secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.ARGOCD_PASS }}" ]; then
+          echo "Error: ARGOCD_PASS secret is not set"
+          exit 1
+        fi
+        argocd login ${{ secrets.ARGOCD_SERVER }} \
+          --username ${{ secrets.ARGOCD_USER }} \
+          --password ${{ secrets.ARGOCD_PASS }} \
+          --grpc-web \
+          --insecure \
+          --skip-test-tls || {
+          echo "Failed to login to ArgoCD. Please check:"
+          echo "1. ArgoCD server is accessible from GitHub Actions (may need ngrok or public ingress)"
+          echo "2. ARGOCD_SERVER, ARGOCD_USER, and ARGOCD_PASS secrets are correctly set"
+          exit 1
+        }
 
     - name: Register Repository in Argo CD
       run: argocd repo add ${{ github.event.inputs.repoURLforArgo }} --username ${{ github.actor }} --password ${{ secrets.MYGITHUB_TOKEN }}
