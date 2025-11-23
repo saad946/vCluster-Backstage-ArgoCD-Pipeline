@@ -34,9 +34,8 @@ create_dns_record() {
     fi
 }
 
-# Choose DNS record type based on cluster type (case-insensitive)
-HOSTCLUSTERTYPE_LOWER=$(echo "$HOSTCLUSTERTYPE" | tr '[:upper:]' '[:lower:]')
-case $HOSTCLUSTERTYPE_LOWER in
+# Choose DNS record type based on cluster type
+case $HOSTCLUSTERTYPE in
     eks)
         create_dns_record "CNAME" "$DOMAIN" "$TARGET_DOMAIN" 1 false
         ;;
