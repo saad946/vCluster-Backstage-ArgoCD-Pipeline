@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ebs-csi-controller-sa
+  namespace: kube-system
+  annotations:
+    # Replace ACCOUNT_ID with your AWS account ID (982291412478)
+    # Replace CLUSTER_NAME with your cluster name (vcluster-backstage-crossplane-demo)
+    eks.amazonaws.com/role-arn: arn:aws:iam::982291412478:role/AmazonEKS_EBS_CSI_DriverRole_vcluster-backstage-crossplane-demo
+

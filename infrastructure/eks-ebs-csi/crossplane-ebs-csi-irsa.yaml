@@ -1,0 +1,51 @@
+apiVersion: iam.aws.crossplane.io/v1beta1
+kind: Role
+metadata:
+  name: eks-ebs-csi-driver-role
+  annotations:
+    crossplane.io/external-name: AmazonEKS_EBS_CSI_DriverRole_vcluster-backstage-crossplane-demo
+spec:
+  forProvider:
+    assumeRolePolicyDocument: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::982291412478:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/9F4924FC7DD5C3A7B2202693D9F55514"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "oidc.eks.us-east-1.amazonaws.com/id/9F4924FC7DD5C3A7B2202693D9F55514:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa",
+                "oidc.eks.us-east-1.amazonaws.com/id/9F4924FC7DD5C3A7B2202693D9F55514:aud": "sts.amazonaws.com"
+              }
+            }
+          }
+        ]
+      }
+    description: "IRSA role for EBS CSI Driver on vcluster-backstage-crossplane-demo"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.crossplane.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: eks-ebs-csi-driver-policy
+spec:
+  forProvider:
+    roleNameRef:
+      name: eks-ebs-csi-driver-role
+    policyArn: arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+  providerConfigRef:
+    name: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ebs-csi-controller-sa
+  namespace: kube-system
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::982291412478:role/AmazonEKS_EBS_CSI_DriverRole_vcluster-backstage-crossplane-demo
+
