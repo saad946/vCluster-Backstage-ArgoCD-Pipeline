@@ -67,7 +67,7 @@ jobs:
       run: argocd login ${{ secrets.ARGOCD_SERVER }} --username ${{ secrets.ARGOCD_USER }} --password ${{ secrets.ARGOCD_PASS }} --grpc-web --insecure
 
     - name: Register Repository in Argo CD
-      run: argocd repo add ${{ github.event.inputs.repoURLforArgo }} --username ${{ github.actor }} --password ${{ secrets.MYGITHUB_TOKEN }} --upsert
+      run: argocd repo add ${{ github.event.inputs.repoURLforArgo }} --username saad946 --password ${{ secrets.MYGITHUB_TOKEN }} --upsert
 
     - name: Register Helm Repository in Argo CD
       run: |
