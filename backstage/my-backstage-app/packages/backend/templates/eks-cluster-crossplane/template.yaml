@@ -82,7 +82,7 @@ spec:
       input:
         workflowId: deploy_with_argocd.yaml
         repoUrl: 'github.com?repo=vCluster-Backstage-ArgoCD-Pipeline&owner=saad946'
-        branchOrTagName: 'master'
+        branchOrTagName: 'main'
         workflowInputs:
           clusterName: ${{ parameters.clusterName }}
           nodeSize: ${{ parameters.nodeSize }}
