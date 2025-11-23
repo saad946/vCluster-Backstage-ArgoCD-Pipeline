@@ -34,13 +34,6 @@ create_dns_record() {
     fi
 }
 
-# Validate parameters
-if [ -z "$HOSTCLUSTERTYPE" ]; then
-    echo "Error: HOSTCLUSTERTYPE parameter is required"
-    echo "Usage: $0 <vcluster-name> <cf-zone-id> <cf-api-token> <target-domain> <host-cluster-type>"
-    exit 1
-fi
-
 # Choose DNS record type based on cluster type (case-insensitive)
 HOSTCLUSTERTYPE_LOWER=$(echo "$HOSTCLUSTERTYPE" | tr '[:upper:]' '[:lower:]')
 case $HOSTCLUSTERTYPE_LOWER in
@@ -55,7 +48,6 @@ case $HOSTCLUSTERTYPE_LOWER in
         echo "AKS configuration not implemented yet."
         ;;
     *)
-        echo "Unsupported HOSTCLUSTERTYPE: $HOSTCLUSTERTYPE (expected: eks, gke, or aks)"
-        exit 1
+        echo "Unsupported HOSTCLUSTERTYPE: $HOSTCLUSTERTYPE"
         ;;
 esac
