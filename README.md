@@ -54,8 +54,27 @@ ngrok config add-authtoken cr_35ccAvcJRXfqqJZaWp4r8tx1n8P
 ```
 
 2. Start a tunnel
+
+**Option A: Manual Setup (Simple)**
 ```bash
-ngrok http https://localhost:8080
+# Start port-forward in background
+kubectl port-forward -n argocd service/argocd-server 8080:443 > /tmp/argocd-pf.log 2>&1 &
+
+# Start ngrok tunnel in background
+ngrok http https://localhost:8080 > /tmp/ngrok.log 2>&1 &
+
+# Wait a few seconds, then get the public URL
+sleep 5
+curl -s http://localhost:4040/api/tunnels | grep -o 'https://[a-z0-9-]*\.ngrok[^"]*' | head -1
+```
+
+**Option B: Automated Setup (Recommended)**
+```bash
+# Start both port-forward and ngrok in one command
+kubectl port-forward -n argocd service/argocd-server 8080:443 & \
+ngrok http https://localhost:8080 & \
+sleep 8 && \
+curl -s http://localhost:4040/api/tunnels | grep -o 'https://[a-z0-9-]*\.ngrok[^"]*' | head -1 | sed 's|https://||'
 ```
 
 You'll get something like this:
@@ -63,7 +82,18 @@ You'll get something like this:
 Forwarding                    https://a7eb-24-150-170-114.ngrok-free.app -> https://localhost:8080
 ```
 
-The `https://a7eb-24-150-170-114.ngrok-free.app` address is your ngrok forwarding address. You can use this to connect to your local ArgoCD instance from GitHub. Traffic will get forward to your local ArgoCD server running on `localhost:8080`.
+The `https://a7eb-24-150-170-114.ngrok-free.app` address is your ngrok forwarding address. **Important:** For GitHub secrets, use only the hostname (without `https://`), e.g., `a7eb-24-150-170-114.ngrok-free.app`.
+
+**Note:** The ngrok URL changes each time you restart the tunnel. You'll need to update the `ARGOCD_SERVER` GitHub secret whenever you restart ngrok.
+
+**To stop the tunnel:**
+```bash
+pkill -f "kubectl port-forward.*argocd-server"
+pkill -f "ngrok http"
+```
+
+**To view ngrok web interface:**
+Open http://localhost:4040 in your browser to see tunnel status and requests.
 
 ### Get an ArgoCD Token for Backstage Plugin
 
@@ -122,6 +152,70 @@ ARGOCD_USER -> admin
 
 ![Developer Settings](images/GitHub_Token_Settings.png)
 ![Token Scopes](images/GitHub_Token_Scopes.png)
+
+### Common Issues and Troubleshooting
+
+#### Issue 1: Repository Already Exists Error
+**Error:** `Failed to create the User repository, Repository creation failed.: name already exists on this account`
+
+**Solution:** 
+- The Backstage template creates a **new** GitHub repository for each cluster deployment
+- You must use a **unique repository name** that doesn't already exist
+- Example: Instead of `vcluster-backstage-crossplane-demo`, use `vcluster-backstage-crossplane-demo-2` or `eks-cluster-<unique-name>`
+- The template workflow: Creates new repo → Triggers GitHub Action → ArgoCD deploys
+
+#### Issue 2: Branch Name Error (master vs main)
+**Error:** `HttpError: No ref found for: master`
+
+**Solution:**
+- Ensure your repository uses `main` as the default branch (not `master`)
+- Update the template file `backstage/my-backstage-app/packages/backend/templates/eks-cluster-crossplane/template.yaml`
+- Change `branchOrTagName: 'master'` to `branchOrTagName: 'main'`
+- Restart Backstage: `kubectl rollout restart deployment/backstage -n backstage`
+
+#### Issue 3: ArgoCD Login Failures in GitHub Actions
+**Error:** `Failed to login to ArgoCD` or `No ref found`
+
+**Solutions:**
+1. **Verify ngrok tunnel is running:**
+   ```bash
+   # Check if ngrok is running
+   curl -s http://localhost:4040/api/tunnels
+   
+   # If not running, start it:
+   kubectl port-forward -n argocd service/argocd-server 8080:443 &
+   ngrok http https://localhost:8080 &
+   ```
+
+2. **Verify GitHub secrets are set correctly:**
+   - `ARGOCD_SERVER`: Use only the hostname (e.g., `a7eb-24-150-170-114.ngrok-free.app`), **NOT** the full URL
+   - `ARGOCD_USER`: `admin`
+   - `ARGOCD_PASS`: Get it with:
+     ```bash
+     kubectl get secret -n argocd argocd-initial-admin-secret -o json | jq -r '.data.password' | base64 --decode
+     ```
+
+3. **Check ArgoCD server accessibility:**
+   - The ngrok URL must be accessible from the internet
+   - Test it: `curl https://your-ngrok-hostname.ngrok-free.app` (should return ArgoCD response)
+
+#### Issue 4: Limited Kubernetes Versions in Backstage Template
+**Issue:** Only seeing versions 1.28 and 1.29 in the dropdown
+
+**Solution:**
+- The template has been updated to include versions 1.28 through 1.34
+- If you don't see newer versions, restart Backstage:
+  ```bash
+  kubectl rollout restart deployment/backstage -n backstage
+  kubectl rollout status deployment/backstage -n backstage
+  ```
+
+#### Issue 5: GitHub Actions Workflow Improvements
+The workflow now includes:
+- Better error handling and validation
+- Connectivity checks before login attempts
+- Clearer error messages for troubleshooting
+- Automatic secret validation
 
 ## Crossplane Secrets for Clouds
 
@@ -313,10 +407,56 @@ You will already have some built-in templates that were created with the backsta
 
 #### Update Templates as Needed
 
-You will need to check the templates and make the necessary updates to work with your forked repo, specifically the 
-`repoUrl: 'github.com?repo=platform-engineering-playground&owner=TeKanAid-Subscription'`
+**Required Template Updates:**
 
-Once you make the change, commit and push the changes.
+1. **Update Repository URL:**
+   You will need to check the templates and make the necessary updates to work with your forked repo, specifically the 
+   `repoUrl: 'github.com?repo=platform-engineering-playground&owner=TeKanAid-Subscription'`
+   
+   Update to your repository:
+   ```yaml
+   repoUrl: 'github.com?repo=vCluster-Backstage-ArgoCD-Pipeline&owner=saad946'
+   ```
+
+2. **Update Branch Name:**
+   Ensure templates use `main` instead of `master`:
+   ```yaml
+   branchOrTagName: 'main'  # Not 'master'
+   ```
+
+3. **Update Kubernetes Versions:**
+   The EKS cluster template now supports versions 1.28 through 1.34. If you need to update:
+   ```yaml
+   version:
+     title: K8s Version
+     type: string
+     description: The K8s version to deploy
+     enum:
+       - "1.28"
+       - "1.29"
+       - "1.30"
+       - "1.31"
+       - "1.32"
+       - "1.33"
+       - "1.34"
+   ```
+
+4. **Template Files to Update:**
+   - `backstage/my-backstage-app/packages/backend/templates/eks-cluster-crossplane/template.yaml`
+   - `backstage/my-backstage-app/packages/backend/templates/generic-k8s-cluster/template.yaml`
+   - `backstage/my-backstage-app/packages/backend/templates/vcluster/template.yaml`
+
+**After Making Changes:**
+```bash
+# Commit and push changes
+git add backstage/my-backstage-app/packages/backend/templates/
+git commit -m "Update templates for new repository"
+git push
+
+# Restart Backstage to pick up template changes
+kubectl rollout restart deployment/backstage -n backstage
+kubectl rollout status deployment/backstage -n backstage
+```
 
 #### Register a New Template
 
@@ -341,13 +481,45 @@ kubens <your-cluster-name>
 kubectl get managed
 ```
 
-The name of the cluster you chose when filling out the Backstage template will be the name of the secret, e.g. `a-team-eks-cluster`. You can then use the following commands to access the new EKS cluster:
+**Accessing the EKS Cluster:**
 
+The secret name follows the pattern: `<cluster-name>-cluster` (not just `<cluster-name>`).
+
+For example, if your cluster name is `vcluster-backstage-crossplane-demo`, the secret will be:
+- Secret name: `vcluster-backstage-crossplane-demo-cluster`
+- Namespace: `vcluster-backstage-crossplane-demo` (same as cluster name)
+
+**Step 1: Find the secret:**
 ```bash
-kubectl get secret a-team-eks-cluster -o jsonpath='{.data.kubeconfig}' | base64 -d > eks-kubeconfig.yaml
+# List all secrets with cluster in the name
+kubectl get secrets -A | grep cluster
+
+# Or check in the cluster's namespace
+kubectl get secrets -n <cluster-name> | grep cluster
+```
+
+**Step 2: Extract kubeconfig:**
+```bash
+# Get the kubeconfig (replace <cluster-name> with your actual cluster name)
+kubectl get secret <cluster-name>-cluster -n <cluster-name> -o jsonpath='{.data.kubeconfig}' | base64 -d > eks-kubeconfig.yaml
+
+# Example:
+kubectl get secret vcluster-backstage-crossplane-demo-cluster -n vcluster-backstage-crossplane-demo -o jsonpath='{.data.kubeconfig}' | base64 -d > eks-kubeconfig.yaml
+```
+
+**Step 3: Use the kubeconfig:**
+```bash
 export KUBECONFIG=$(pwd)/eks-kubeconfig.yaml
 kubectl get nodes
 kubectl get namespaces
+kubectl cluster-info
+```
+
+**Note:** If the kubeconfig from Crossplane doesn't have proper permissions, update it using AWS CLI:
+```bash
+# Update with AWS credentials for better permissions
+aws eks update-kubeconfig --name <cluster-name> --region <region> --kubeconfig eks-kubeconfig-aws.yaml
+export KUBECONFIG=$(pwd)/eks-kubeconfig-aws.yaml
 ```
 
 In the case of a GKE cluster you can access the cluster using the following
@@ -360,17 +532,95 @@ gcloud container clusters get-credentials samgke --region us-east1 --project cro
 
 #### Register the New Cluster in ArgoCD
 
-Now you can register the new cluster in ArgoCD like this:
-
+**Important:** Before registering, ensure you're logged into ArgoCD:
 ```bash
-argocd cluster add your-cluster-context --name your-cluster-for-argocd
+# Login to ArgoCD (replace with your ngrok URL if using tunnel)
+argocd login adelaide-unerupted-nonimpulsively.ngrok-free.dev \
+  --username admin \
+  --password $(kubectl get secret -n argocd argocd-initial-admin-secret -o json | jq -r '.data.password' | base64 --decode) \
+  --grpc-web \
+  --insecure
 ```
 
-Example:
+**Method 1: Using AWS CLI (Recommended for EKS)**
+
+If you have AWS CLI configured, this method ensures proper authentication:
 
 ```bash
-argocd cluster add my-new-eks-cluster --name eks-dev
+# Step 1: Update kubeconfig with AWS credentials
+aws eks update-kubeconfig --name <your-cluster-name> --region <region> --kubeconfig eks-kubeconfig-aws.yaml
+
+# Step 2: Get the context name
+export KUBECONFIG=$(pwd)/eks-kubeconfig-aws.yaml
+kubectl config current-context
+
+# Step 3: Add cluster to ArgoCD (use the context name from step 2)
+argocd cluster add <context-name> \
+  --name <cluster-name-in-argocd> \
+  --kubeconfig $(pwd)/eks-kubeconfig-aws.yaml \
+  --grpc-web \
+  --insecure
 ```
+
+**Example:**
+```bash
+# Update kubeconfig
+aws eks update-kubeconfig --name vcluster-backstage-crossplane-demo --region us-east-1 --kubeconfig eks-kubeconfig-aws.yaml
+
+# Get context (will be something like: arn:aws:eks:us-east-1:ACCOUNT:cluster/CLUSTER-NAME)
+export KUBECONFIG=$(pwd)/eks-kubeconfig-aws.yaml
+CONTEXT=$(kubectl config current-context)
+
+# Register in ArgoCD
+argocd cluster add $CONTEXT --name eks-dev --kubeconfig $(pwd)/eks-kubeconfig-aws.yaml --grpc-web --insecure
+```
+
+**Method 2: Using Existing Kubeconfig (May Require Permissions)**
+
+If you already have a kubeconfig from Crossplane:
+
+```bash
+# Extract kubeconfig from secret
+kubectl get secret <cluster-name>-cluster -n <cluster-name> -o jsonpath='{.data.kubeconfig}' | base64 -d > eks-kubeconfig.yaml
+
+# Set context
+export KUBECONFIG=$(pwd)/eks-kubeconfig.yaml
+kubectl config current-context
+
+# Add to ArgoCD
+argocd cluster add <context-name> --name <cluster-name-in-argocd> --kubeconfig $(pwd)/eks-kubeconfig.yaml --grpc-web --insecure
+```
+
+**Note:** If you get "Unauthorized" errors with Method 2, use Method 1 (AWS CLI) which ensures proper IAM permissions.
+
+**Verify Cluster Registration:**
+```bash
+argocd cluster list --grpc-web --insecure
+```
+
+You should see your cluster listed. The status may show "Unknown" until applications are deployed to it.
+
+**Troubleshooting Cluster Registration:**
+
+- **Error: "Unauthorized" or "failed to create service account"**
+  - Use AWS CLI method (Method 1) instead
+  - Ensure your AWS credentials have proper EKS permissions
+  - The kubeconfig from Crossplane may not have sufficient RBAC permissions
+
+- **Error: "ArgoCD CLI not found"**
+  ```bash
+  # Install ArgoCD CLI (macOS)
+  brew install argocd
+  
+  # Or download directly
+  curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-darwin-arm64
+  chmod +x /usr/local/bin/argocd
+  ```
+
+- **Error: "Connection refused" or "Cannot reach ArgoCD"**
+  - Ensure ArgoCD is running: `kubectl get pods -n argocd`
+  - If using ngrok, ensure tunnel is active: `curl http://localhost:4040/api/tunnels`
+  - Check port-forward is running: `kubectl port-forward -n argocd service/argocd-server 8080:443`
 
 ## Create vClusters for Devs on our EKS Cluster
 
@@ -467,3 +717,97 @@ kubectl get nodes
 ```
 
 #### Congrats on building an Internal Developer Platform with vCluster!
+
+## Quick Reference Guide
+
+### Essential Commands
+
+**ArgoCD Setup:**
+```bash
+# Get admin password
+kubectl get secret -n argocd argocd-initial-admin-secret -o json | jq -r '.data.password' | base64 --decode
+
+# Port-forward ArgoCD
+kubectl port-forward -n argocd service/argocd-server 8080:443
+
+# Start ngrok tunnel (in background)
+kubectl port-forward -n argocd service/argocd-server 8080:443 & \
+ngrok http https://localhost:8080 & \
+sleep 8 && curl -s http://localhost:4040/api/tunnels | grep -o 'https://[a-z0-9-]*\.ngrok[^"]*' | head -1
+
+# Login to ArgoCD CLI
+argocd login <ngrok-hostname> --username admin --password <password> --grpc-web --insecure
+```
+
+**EKS Cluster Access:**
+```bash
+# Extract kubeconfig
+kubectl get secret <cluster-name>-cluster -n <cluster-name> -o jsonpath='{.data.kubeconfig}' | base64 -d > eks-kubeconfig.yaml
+
+# Use kubeconfig
+export KUBECONFIG=$(pwd)/eks-kubeconfig.yaml
+kubectl get nodes
+```
+
+**Register Cluster in ArgoCD:**
+```bash
+# Update kubeconfig with AWS credentials
+aws eks update-kubeconfig --name <cluster-name> --region <region> --kubeconfig eks-kubeconfig-aws.yaml
+
+# Add to ArgoCD
+export KUBECONFIG=$(pwd)/eks-kubeconfig-aws.yaml
+CONTEXT=$(kubectl config current-context)
+argocd cluster add $CONTEXT --name <cluster-name-in-argocd> --kubeconfig $(pwd)/eks-kubeconfig-aws.yaml --grpc-web --insecure
+```
+
+**Backstage Management:**
+```bash
+# Port-forward Backstage
+kubectl port-forward -n backstage service/backstage 7007:7007
+
+# Restart Backstage (after template changes)
+kubectl rollout restart deployment/backstage -n backstage
+kubectl rollout status deployment/backstage -n backstage
+```
+
+### GitHub Actions Secrets Checklist
+
+Ensure these secrets are set in your GitHub repository:
+
+- [ ] `ARGOCD_SERVER` - ngrok hostname (without https://)
+- [ ] `ARGOCD_USER` - admin
+- [ ] `ARGOCD_PASS` - ArgoCD admin password
+- [ ] `MYGITHUB_TOKEN` - GitHub personal access token
+- [ ] `AWS_ACCESS_KEY_ID` - AWS access key
+- [ ] `AWS_SECRET_ACCESS_KEY` - AWS secret key
+- [ ] `TARGET_DOMAIN` - Traefik LoadBalancer hostname/IP (set after EKS cluster creation)
+
+### Common Workflows
+
+**Creating a New EKS Cluster via Backstage:**
+1. Access Backstage UI (port-forward on 7007)
+2. Click "Create" → Select "New EKS Cluster with Crossplane"
+3. Fill in form:
+   - **Repository Location:** Use a **unique** repository name (must not exist)
+   - **Cluster Name:** Your desired cluster name
+   - **Node Size:** small/medium/large
+   - **K8s Version:** 1.28-1.34
+   - **Min Node Count:** 1-3
+4. Submit and wait for GitHub Action to complete
+5. Check cluster status: `kubectl get managed -n <cluster-name>`
+6. Extract kubeconfig and connect to cluster
+7. Register cluster in ArgoCD
+
+**Troubleshooting Workflow:**
+1. Check Backstage logs: `kubectl logs -n backstage deployment/backstage`
+2. Check GitHub Actions workflow runs
+3. Verify ngrok tunnel: `curl http://localhost:4040/api/tunnels`
+4. Check ArgoCD applications: `argocd app list --grpc-web --insecure`
+5. Verify secrets exist: `kubectl get secrets -n <cluster-name>`
+
+### Key Files and Locations
+
+- **Templates:** `backstage/my-backstage-app/packages/backend/templates/`
+- **GitHub Workflows:** `.github/workflows/`
+- **Crossplane Configs:** `crossplane/`
+- **Backstage Config:** `backstage/my-backstage-app/app-config.yaml`
